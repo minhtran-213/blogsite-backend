@@ -2,13 +2,14 @@ import { HttpException, Injectable } from '@nestjs/common';
 
 import { AuthPayload } from 'src/common/interface/AuthPayload.interface';
 import { CreateUserRequest } from 'src/user/User.request';
+import { JwtService } from '@nestjs/jwt';
 import { User } from 'src/user/User.schema';
 import { UserService } from 'src/user/user.service';
 
 @Injectable()
 export class AuthService {
 
-    constructor(private userService: UserService){}
+    constructor(private userService: UserService, private jwtService: JwtService){}
     
     async register(request: CreateUserRequest) {
         await this.userService.createNewUser(request)
@@ -34,6 +35,12 @@ export class AuthService {
             email: user.email,
             id: user._id,
             name: user.firstName
+        }
+
+        const token = await this.jwtService.signAsync(authPayload, { expiresIn: '5mins'})
+        
+        return {
+            "accessToken": token
         }
     }
 }
