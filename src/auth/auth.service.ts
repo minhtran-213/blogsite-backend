@@ -15,8 +15,8 @@ export class AuthService {
         await this.userService.createNewUser(request)
     }
 
-    async validateUser(username: string, password: string) {
-        const foundedUser = await this.userService.getUserByUsername(username)
+    async validateUser(email: string, password: string) {
+        const foundedUser = await this.userService.getUserByEmail(email)
         if (!foundedUser) {
             throw new HttpException("User not found", 404)
         }
@@ -31,7 +31,6 @@ export class AuthService {
 
     async login(user: User) {
         const authPayload : AuthPayload = {
-            username: user.username,
             email: user.email,
             id: user._id,
             name: user.firstName

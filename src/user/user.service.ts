@@ -15,7 +15,7 @@ export class UserService {
         await newUser.save()
     }
 
-    async getUserByUsername(username: string): Promise<User> {
-        return this.userModel.findOne({username: username})
+    async getUserByEmail(email: string): Promise<User> {
+        return this.userModel.findOne({email})
     }
 }

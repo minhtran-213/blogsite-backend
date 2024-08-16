@@ -8,7 +8,10 @@ import { Strategy } from "passport-local";
 export class LocalStrategy extends PassportStrategy(Strategy) {
 
     constructor(private authService: AuthService) {
-        super()
+        super({
+            usernameField: 'email',
+            passwordField: 'password'
+        })
     }
 
     async validate(username: string, password: string) {

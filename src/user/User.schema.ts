@@ -10,17 +10,14 @@ export class User {
     
     @Prop({required: true, unique: true})
     email: string
-
-    @Prop({required: true, unique: true})
-    username: string
-
+    
     @Prop({type: Date})
     dateOfBirth?: Date
 
     @Prop({type: String, enum: Gender})
     gender?: Gender
 
-    @Prop({type: [String], enum: UserRole, default: UserRole.READER})
+    @Prop({type: [String], enum: UserRole, default: UserRole.USER})
     roles: UserRole[]
 
     @Prop()
@@ -40,6 +37,12 @@ export class User {
 
     @Prop({required: true})
     password: string
+
+    @Prop({required: false, type: [String]})
+    interests?: string[]
+
+    @Prop({required: false})
+    professional?: string
 }
 
 export const UserSchema = SchemaFactory.createForClass(User)
