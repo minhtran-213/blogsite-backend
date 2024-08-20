@@ -1,4 +1,4 @@
-import { IsDate, IsEmail, IsEmpty, IsNotEmpty, IsOptional, IsStrongPassword } from "class-validator"
+import { IsDate, IsDateString, IsEmail, IsEmpty, IsNotEmpty, IsOptional, IsStrongPassword } from "class-validator"
 
 import { Gender } from "src/common/enums"
 
@@ -10,7 +10,7 @@ export class CreateUserRequest {
     lastName?: string
 
     @IsOptional()
-    @IsDate({message: "Date is not in correct format"})
+    @IsDateString()
     dateOfBirth?: Date
 
     gender?: Gender
