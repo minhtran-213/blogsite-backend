@@ -1,25 +1,25 @@
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Module, ValidationPipe } from '@nestjs/common';
 
-import { APP_PIPE } from '@nestjs/core';
 import { AuthModule } from './auth/auth.module';
 import { BlogPostModule } from './blog_post/blog_post.module';
 import { GraphQLModule } from '@nestjs/graphql';
+import { MongooseConfigService } from './common/configs';
 import { MongooseModule } from '@nestjs/mongoose';
 import { UserModule } from './user/user.module';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true
+    }),
     AuthModule, UserModule, BlogPostModule,
-    MongooseModule.forRoot('mongodb://127.0.0.1/blogsite')
+    MongooseModule.forRootAsync({
+      useClass: MongooseConfigService
+    }),
   ],
   controllers: [],
-  providers: [
-    {
-      provide: APP_PIPE,
-      useClass: ValidationPipe
-    }
-  ],
-  
+  providers: [],  
 })
 export class AppModule {}

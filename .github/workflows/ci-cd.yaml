@@ -1,0 +1,114 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  BACKEND_REPO: blogsite-backend
+  DEVOPS_REPO: blogsite-devops
+  DOCKER_IMAGE: ghcr.io/minhtran-213/blogsite-backend
+  DEPLOY_PATH: /root/blogsite-project/blogsite-devops
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout backend code
+      uses: actions/checkout@v2
+      with:
+        repository: minhtran-213/${{ env.BACKEND_REPO }}
+        token: ${{ secrets.TOKEN }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v1
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.TOKEN }}
+
+    - name: Get current version
+      id: get_version
+      run: echo ::set-output name=VERSION::$(grep '"version":' package.json | cut -d '"' -f 4)
+
+    - name: Bump version
+      id: bump_version
+      run: |
+        IFS='.' read -ra VERSION_PARTS <<< "${{ steps.get_version.outputs.VERSION }}"
+        PATCH=$((VERSION_PARTS[2] + 1))
+        NEW_VERSION="${VERSION_PARTS[0]}.${VERSION_PARTS[1]}.$PATCH"
+        echo ::set-output name=NEW_VERSION::$NEW_VERSION
+        sed -i 's/"version": ".*"/"version": "'$NEW_VERSION'"/' package.json
+        
+    - name: Update MONGO_URL in .env
+      run: |
+        echo "MONGO_URL=${{ secrets.MONGO_URL }}" > .env
+        echo "NEXT_PUBLIC_BACKEND_BASE_URL=''" >> .env
+
+    - name: Commit and push new version
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git commit -am "Bump version to ${{ steps.bump_version.outputs.NEW_VERSION }}"
+        git push
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        push: true
+        tags: ${{ env.DOCKER_IMAGE }}:${{ steps.bump_version.outputs.NEW_VERSION }}
+
+    - name: Checkout DevOps repository
+      uses: actions/checkout@v2
+      with:
+        repository: minhtran-213/${{ env.DEVOPS_REPO }}
+        token: ${{ secrets.TOKEN }}
+
+    - name: Update docker-compose.yml
+      run: |
+        sed -i 's|${{ env.DOCKER_IMAGE }}:[0-9.]*|${{ env.DOCKER_IMAGE }}:${{ steps.bump_version.outputs.NEW_VERSION }}|' manifests/docker-compose.yml
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git commit -am "Update backend image to ${{ steps.bump_version.outputs.NEW_VERSION }}"
+        git push
+
+    - name: Deploy to VM
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USERNAME }}
+        password: ${{ secrets.VM_PASSWORD }}
+        port: ${{ secrets.VM_PORT }}
+        script: |
+          # Create the directory if it doesn't exist
+          mkdir -p $DEPLOY_PATH
+          
+          # Navigate to the directory
+          cd $DEPLOY_PATH
+          
+          # Check if the directory is a git repository
+          if [ ! -d .git ]; then
+            # If not, initialize it and set up the remote
+            git init
+            git remote add origin https://github.com/minhtran-213/${{ env.DEVOPS_REPO }}.git
+          fi
+          
+          # Fetch the latest changes
+          git fetch origin main
+          
+          # Reset to the latest commit on main
+          git reset --hard origin/main
+          
+          # Ensure docker-compose is installed
+          if ! command -v docker-compose &> /dev/null; then
+            echo "docker-compose not found, installing..."
+            sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+          fi
+          
+          # Run docker-compose
+          docker-compose -f manifests/docker-compose.yml up -d
