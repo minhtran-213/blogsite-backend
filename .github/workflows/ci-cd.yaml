@@ -135,10 +135,10 @@ jobs:
         repository: minhtran-213/${{ env.DEVOPS_REPO }}
         token: ${{ secrets.TOKEN }}
 
-    - name: Update docker-compose.yml and .env
+    - name: Update docker-compose.yaml and .env
       run: |
-        # Update docker-compose.yml
-        sed -i 's|${{ env.DOCKER_IMAGE }}:[0-9.]*|${{ env.DOCKER_IMAGE }}:${{ needs.determine-release.outputs.new_version }}|' manifests/docker-compose.yml
+        # Update docker-compose.yaml
+        sed -i 's|${{ env.DOCKER_IMAGE }}:[0-9.]*|${{ env.DOCKER_IMAGE }}:${{ needs.determine-release.outputs.new_version }}|' manifests/docker-compose.yaml
         
         # Update .env file in the manifests folder
         echo "MONGO_URL=${{ secrets.MONGO_URL }}" > manifests/.env
@@ -147,7 +147,7 @@ jobs:
         # Commit and push changes
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add manifests/docker-compose.yml manifests/.env
+        git add manifests/docker-compose.yaml manifests/.env
         git commit -m "Update backend image to ${{ needs.determine-release.outputs.new_version }} and update .env"
         git push
 
@@ -172,4 +172,4 @@ jobs:
             sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
             sudo chmod +x /usr/local/bin/docker-compose
           fi
-          docker-compose -f manifests/docker-compose.yml up -d
+          docker-compose -f manifests/docker-compose.yaml up -d
