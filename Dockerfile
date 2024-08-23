@@ -29,7 +29,6 @@ WORKDIR /usr/src/app
 # Copy only the necessary files from the build stage
 COPY --from=build /usr/src/app/dist ./dist
 COPY --from=build /usr/src/app/node_modules ./node_modules
-COPY .env .env
 
 # Set environment variables
 ENV NODE_ENV=production
