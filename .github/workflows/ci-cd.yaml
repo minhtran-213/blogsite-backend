@@ -8,7 +8,7 @@ env:
   BACKEND_REPO: blogsite-backend
   DEVOPS_REPO: blogsite-devops
   DOCKER_IMAGE: ghcr.io/minhtran-213/blogsite-backend
-  DEPLOY_PATH: /path/to/your/project
+  DEPLOY_PATH: /root/blogsite-project/blogsite-devops
 
 jobs:
   determine-release:
