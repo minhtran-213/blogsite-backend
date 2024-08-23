@@ -8,17 +8,114 @@ env:
   BACKEND_REPO: blogsite-backend
   DEVOPS_REPO: blogsite-devops
   DOCKER_IMAGE: ghcr.io/minhtran-213/blogsite-backend
-  DEPLOY_PATH: /root/blogsite-project/blogsite-devops
+  DEPLOY_PATH: /path/to/your/project
 
 jobs:
+  determine-release:
+    name: Determine Release Type
+    runs-on: ubuntu-latest
+    outputs:
+      release_type: ${{ steps.release.outputs.release_type }}
+      new_version: ${{ steps.release.outputs.new_version }}
+      prev_version: ${{ steps.get_previous_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Get previous version
+        id: get_previous_version
+        run: echo "version=$(npm pkg get version | tr -d '"')" >> $GITHUB_OUTPUT
+
+      - name: Determine release type
+        id: release
+        run: |
+          MESSAGE=$(git log -1 --pretty=%B)
+          PREV_VERSION="${{ steps.get_previous_version.outputs.version }}"
+          IFS='.' read -ra VERSION_PARTS <<< "$PREV_VERSION"
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]}
+          
+          if [[ "$MESSAGE" =~ ^big\(.*\) ]]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            echo "release_type=major" >> $GITHUB_OUTPUT
+          elif [[ "$MESSAGE" =~ ^feat\(.*\) ]]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            echo "release_type=minor" >> $GITHUB_OUTPUT
+          elif [[ "$MESSAGE" =~ ^fix\(.*\) ]]; then
+            PATCH=$((PATCH + 1))
+            echo "release_type=patch" >> $GITHUB_OUTPUT
+          else
+            echo "release_type=none" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ "${{ steps.release.outputs.release_type }}" != "none" ]]; then
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+            echo "new_version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          fi
+
   build-and-deploy:
+    needs: determine-release
+    if: needs.determine-release.outputs.release_type != 'none'
     runs-on: ubuntu-latest
     steps:
     - name: Checkout backend code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         repository: minhtran-213/${{ env.BACKEND_REPO }}
-        token: ${{ secrets.TOKEN }}
+        token: ${{ secrets.GH_PAT }}
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '14'
+
+    - name: Update version in package.json
+      run: npm version ${{ needs.determine-release.outputs.new_version }} --no-git-tag-version
+
+    - name: Update MONGO_URL in .env
+      run: |
+        echo "MONGO_URL=${{ secrets.MONGO_URL }}" > .env
+        echo "NEXT_PUBLIC_BACKEND_BASE_URL=''" >> .env
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Generate changelog
+      id: changelog
+      run: |
+        RELEASE_DATE=$(date +"%Y-%m-%d")
+        REPO_URL="https://github.com/${{ github.repository }}"
+        echo "## ${{ needs.determine-release.outputs.new_version }} ($RELEASE_DATE)" > CHANGELOG.md
+        git log --pretty=format:"%s ([%h]($REPO_URL/commit/%H))" --no-merges "${{ needs.determine-release.outputs.prev_version }}..HEAD" | \
+        awk '
+            /^feat\(.*\):/ {print "### Features:\n- " $0; next} 
+            /^fix\(.*\):/ {print "### Bugfix/Changes:\n- " $0; next} 
+            /^build\(.*\):/ {print "### Bugfix/Changes:\n- " $0; next} 
+            /^big\(.*\):/ {print "### Big changes:\n- " $0; next}
+            {print "### Other changes:\n- " $0}
+          ' >> CHANGELOG.md 
+
+    - name: Commit version bump and changelog
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add package.json CHANGELOG.md .env
+        git commit -m "Bump version to ${{ needs.determine-release.outputs.new_version }} and update changelog"
+        git push
+
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+      with:
+        tag_name: v${{ needs.determine-release.outputs.new_version }}
+        release_name: Release ${{ needs.determine-release.outputs.new_version }}
+        body_path: CHANGELOG.md
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v1
@@ -28,52 +125,27 @@ jobs:
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
-        password: ${{ secrets.TOKEN }}
-
-    - name: Get current version
-      id: get_version
-      run: echo ::set-output name=VERSION::$(grep '"version":' package.json | cut -d '"' -f 4)
-
-    - name: Bump version
-      id: bump_version
-      run: |
-        IFS='.' read -ra VERSION_PARTS <<< "${{ steps.get_version.outputs.VERSION }}"
-        PATCH=$((VERSION_PARTS[2] + 1))
-        NEW_VERSION="${VERSION_PARTS[0]}.${VERSION_PARTS[1]}.$PATCH"
-        echo ::set-output name=NEW_VERSION::$NEW_VERSION
-        sed -i 's/"version": ".*"/"version": "'$NEW_VERSION'"/' package.json
-        
-    - name: Update MONGO_URL in .env
-      run: |
-        echo "MONGO_URL=${{ secrets.MONGO_URL }}" > .env
-        echo "NEXT_PUBLIC_BACKEND_BASE_URL=''" >> .env
-
-    - name: Commit and push new version
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git commit -am "Bump version to ${{ steps.bump_version.outputs.NEW_VERSION }}"
-        git push
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v2
       with:
         context: .
         push: true
-        tags: ${{ env.DOCKER_IMAGE }}:${{ steps.bump_version.outputs.NEW_VERSION }}
+        tags: ${{ env.DOCKER_IMAGE }}:${{ needs.determine-release.outputs.new_version }}
 
     - name: Checkout DevOps repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         repository: minhtran-213/${{ env.DEVOPS_REPO }}
-        token: ${{ secrets.TOKEN }}
+        token: ${{ secrets.GH_PAT }}
 
     - name: Update docker-compose.yml
       run: |
-        sed -i 's|${{ env.DOCKER_IMAGE }}:[0-9.]*|${{ env.DOCKER_IMAGE }}:${{ steps.bump_version.outputs.NEW_VERSION }}|' manifests/docker-compose.yml
+        sed -i 's|${{ env.DOCKER_IMAGE }}:[0-9.]*|${{ env.DOCKER_IMAGE }}:${{ needs.determine-release.outputs.new_version }}|' manifests/docker-compose.yml
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git commit -am "Update backend image to ${{ steps.bump_version.outputs.NEW_VERSION }}"
+        git commit -am "Update backend image to ${{ needs.determine-release.outputs.new_version }}"
         git push
 
     - name: Deploy to VM
@@ -81,34 +153,20 @@ jobs:
       with:
         host: ${{ secrets.VM_HOST }}
         username: ${{ secrets.VM_USERNAME }}
-        password: ${{ secrets.VM_PASSWORD }}
-        port: ${{ secrets.VM_PORT }}
+        key: ${{ secrets.VM_SSH_PRIVATE_KEY }}
+        envs: DEPLOY_PATH
         script: |
-          # Create the directory if it doesn't exist
           mkdir -p $DEPLOY_PATH
-          
-          # Navigate to the directory
           cd $DEPLOY_PATH
-          
-          # Check if the directory is a git repository
           if [ ! -d .git ]; then
-            # If not, initialize it and set up the remote
             git init
             git remote add origin https://github.com/minhtran-213/${{ env.DEVOPS_REPO }}.git
           fi
-          
-          # Fetch the latest changes
           git fetch origin main
-          
-          # Reset to the latest commit on main
           git reset --hard origin/main
-          
-          # Ensure docker-compose is installed
           if ! command -v docker-compose &> /dev/null; then
             echo "docker-compose not found, installing..."
             sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
             sudo chmod +x /usr/local/bin/docker-compose
           fi
-          
-          # Run docker-compose
           docker-compose -f manifests/docker-compose.yml up -d
