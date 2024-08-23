@@ -140,7 +140,7 @@ jobs:
         # Update docker-compose.yml
         sed -i 's|${{ env.DOCKER_IMAGE }}:[0-9.]*|${{ env.DOCKER_IMAGE }}:${{ needs.determine-release.outputs.new_version }}|' manifests/docker-compose.yml
         
-        # Update .env file
+        # Update .env file in the manifests folder
         echo "MONGO_URL=${{ secrets.MONGO_URL }}" > manifests/.env
         echo "NEXT_PUBLIC_BACKEND_BASE_URL=''" >> manifests/.env
         
