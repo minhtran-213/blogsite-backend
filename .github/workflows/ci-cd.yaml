@@ -83,7 +83,7 @@ jobs:
         echo "NEXT_PUBLIC_BACKEND_BASE_URL=''" >> .env
 
     - name: Install dependencies
-      run: npm ci
+      run: npm install
 
     - name: Generate changelog
       id: changelog
